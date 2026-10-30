@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markdownReport, jsonReport, MAX_OUTPUT_SIZE } from "../src/report.js";
+import { markdownReport, jsonReport, MAX_OUTPUT_SIZE, truncateOutput } from "../src/report.js";
 
 describe("markdownReport", () => {
   it("lists changed files and validation output", () => {
@@ -212,4 +212,25 @@ describe("output size cap", () => {
     expect(parsed.validations[0].output).toContain("END_TAIL_DATA_");
     expect(parsed.validations[0].output).not.toContain("MIDDLE_");
   });
-});
+
+  it("preserves complete multi-byte characters and cleanly drops partials at boundary without replacement characters", () => {
+    // 2-byte complete char at 8192 boundary (8190 ASCII + 2-byte char '©')
+    const twoByteComplete = "A".repeat(8190) + "©" + "B".repeat(10000);
+    const res2 = truncateOutput(twoByteComplete);
+    expect(res2.text).not.toContain("\uFFFD");
+    expect(res2.text.startsWith("A".repeat(8190) + "©\n")).toBe(true);
+
+    // 4-byte complete emoji at 8192 boundary (8188 ASCII + 4-byte char '😀')
+    const fourByteComplete = "A".repeat(8188) + "😀" + "B".repeat(10000);
+    const res4 = truncateOutput(fourByteComplete);
+    expect(res4.text).not.toContain("\uFFFD");
+    expect(res4.text.startsWith("A".repeat(8188) + "😀\n")).toBe(true);
+
+    // Incomplete multi-byte split across boundary (8190 ASCII + 4-byte emoji where only 2 bytes fit in 8192 head)
+    const splitMultiByte = "A".repeat(8190) + "😀" + "B".repeat(10000);
+    const resSplit = truncateOutput(splitMultiByte);
+    expect(resSplit.text).not.toContain("\uFFFD");
+    expect(resSplit.text.startsWith("A".repeat(8190) + "\n")).toBe(true);
+  });
+});
+
