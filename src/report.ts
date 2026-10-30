@@ -13,6 +13,19 @@ export type JsonReportInput = {
   validationResults: ValidationResult[];
 };
 
+function chooseFence(output: string): string {
+  const matches = output.match(/`+/g);
+  let maxBackticks = 0;
+  if (matches) {
+    for (const match of matches) {
+      if (match.length > maxBackticks) {
+        maxBackticks = match.length;
+      }
+    }
+  }
+  return "`".repeat(Math.max(3, maxBackticks + 1));
+}
+
 export function markdownReport(input: ReportInput): string {
   const lines = [`# Review Report: ${input.repositoryPath}`, "", "## Changed files"];
   if (input.changedFiles.length === 0) {
@@ -39,7 +52,13 @@ export function markdownReport(input: ReportInput): string {
       if (result.timedOut) flags.push("timedOut");
       if (result.truncated) flags.push("truncated");
       const flagStr = flags.length > 0 ? `, ${flags.join(", ")}` : "";
-      lines.push(`### ${result.command} - ${status} (exitCode: ${exitCode}${flagStr})`, "```", result.output, "```");
+      const fence = chooseFence(result.output);
+      lines.push(
+        `### ${result.command} - ${status} (exitCode: ${exitCode}${flagStr})`,
+        fence,
+        result.output,
+        fence,
+      );
     }
   }
 
