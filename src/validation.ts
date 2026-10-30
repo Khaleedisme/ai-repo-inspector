@@ -37,24 +37,31 @@ export function parseCommandString(cmd: string): { file: string; args: string[] 
   const tokens: string[] = [];
   let current = "";
   let quote: string | null = null;
-  let escape = false;
 
   for (let i = 0; i < cmd.length; i++) {
     const char = cmd[i];
 
-    if (escape) {
-      current += char;
-      escape = false;
+    if (quote === "'") {
+      if (char === "'") {
+        quote = null;
+      } else {
+        current += char;
+      }
       continue;
     }
 
-    if (char === "\\") {
-      escape = true;
-      continue;
-    }
-
-    if (quote) {
-      if (char === quote) {
+    if (quote === '"') {
+      if (char === "\\") {
+        const next = cmd[i + 1];
+        if (next === '"' || next === "\\") {
+          current += next;
+          i++;
+          continue;
+        }
+        current += char;
+        continue;
+      }
+      if (char === '"') {
         quote = null;
       } else {
         current += char;
@@ -64,6 +71,17 @@ export function parseCommandString(cmd: string): { file: string; args: string[] 
 
     if (char === "'" || char === '"') {
       quote = char;
+      continue;
+    }
+
+    if (char === "\\") {
+      const next = cmd[i + 1];
+      if (next === '"' || next === "'" || next === "\\" || (next !== undefined && /\s/.test(next))) {
+        current += next;
+        i++;
+        continue;
+      }
+      current += char;
       continue;
     }
 
@@ -114,7 +132,7 @@ export function runValidation(
       stderr: string,
     ) => {
       const stdoutStr = stdout?.toString() ?? "";
-      const stderrStr = stderr?.toString() ?? "";
+      let stderrStr = stderr?.toString() ?? "";
 
       if (!error) {
         const output = [stdoutStr, stderrStr].filter(Boolean).join("\n").trim();
@@ -127,6 +145,10 @@ export function runValidation(
           output,
         });
         return;
+      }
+
+      if (!stderrStr && !stdoutStr && error.message) {
+        stderrStr = error.message;
       }
 
       const timedOut = Boolean(
@@ -143,8 +165,8 @@ export function runValidation(
       let exitCode: number | null = null;
       if (typeof error.code === "number") {
         exitCode = error.code;
-      } else if (typeof (error as any).status === "number") {
-        exitCode = (error as any).status;
+      } else if ("status" in error && typeof (error as { status?: unknown }).status === "number") {
+        exitCode = (error as { status: number }).status;
       }
 
       const outputParts: string[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runValidation, runValidations, VALIDATION_PRESETS } from "../src/validation.js";
+import { runValidation, runValidations, VALIDATION_PRESETS, parseCommandString } from "../src/validation.js";
 
 describe("validation runner", () => {
   it("defines fixed preset commands for test, typecheck, build", () => {
@@ -60,4 +60,23 @@ describe("validation runner", () => {
     expect(result.output).toContain("first");
     expect(result.output).not.toContain("second");
   });
+
+  it("preserves Windows backslashes in file paths in parseCommandString", () => {
+    const parsed = parseCommandString("node C:\\test\\repo\\script.js");
+    expect(parsed.file).toBe("node");
+    expect(parsed.args).toEqual(["C:\\test\\repo\\script.js"]);
+  });
+
+  it("preserves literal escape sequences inside quoted strings in parseCommandString", () => {
+    const parsed = parseCommandString(`node -e "console.log('line1\\nline2');"`);
+    expect(parsed.args).toEqual(["-e", `console.log('line1\\nline2');`]);
+  });
+
+  it("returns status failed with error message in stderr and output when command cannot be spawned", async () => {
+    const result = await runValidation("non_existent_binary_xyz", process.cwd());
+    expect(result.status).toBe("failed");
+    expect(result.stderr).toMatch(/non_existent_binary_xyz|ENOENT/i);
+    expect(result.output).toMatch(/non_existent_binary_xyz|ENOENT/i);
+  });
 });
+
