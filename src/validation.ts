@@ -197,7 +197,7 @@ export function runValidation(
     };
 
     // Check if command is a preset
-    if (trimmed in VALIDATION_PRESETS) {
+    if (Object.hasOwn(VALIDATION_PRESETS, trimmed)) {
       const preset = VALIDATION_PRESETS[trimmed];
       let targetFile = preset.file;
       let targetArgs = [...preset.args];
