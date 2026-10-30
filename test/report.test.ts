@@ -63,6 +63,24 @@ describe("markdownReport", () => {
     expect(report).toMatch(/^### npm test - PASSED \(exitCode: 0\)$/m);
     expect(report).toMatch(/^### npm run build - FAILED \(exitCode: 1, timedOut, truncated\)$/m);
   });
+
+  it("uses fence longer than longest backtick run in output containing ``` and # heading", () => {
+    const outputWithTicksAndHeading = "```\n# heading\nsome content\n```";
+    const report = markdownReport({
+      repositoryPath: "/work/sample",
+      changedFiles: [],
+      validationResults: [
+        {
+          command: "npm test",
+          status: "passed",
+          exitCode: 0,
+          output: outputWithTicksAndHeading,
+        },
+      ],
+    });
+
+    expect(report).toContain("````\n```\n# heading\nsome content\n```\n````");
+  });
 });
 
 describe("jsonReport", () => {
