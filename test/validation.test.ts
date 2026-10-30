@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { runValidation, runValidations, VALIDATION_PRESETS, parseCommandString } from "../src/validation.js";
+import {
+  runValidation,
+  runValidations,
+  VALIDATION_PRESETS,
+  DEFAULT_MAX_BUFFER,
+  parseCommandString,
+} from "../src/validation.js";
 
 describe("validation runner", () => {
+  it("defaults DEFAULT_MAX_BUFFER to 10MB", () => {
+    expect(DEFAULT_MAX_BUFFER).toBe(10 * 1024 * 1024);
+  });
+
   it("defines fixed preset commands for test, typecheck, build", () => {
     expect(VALIDATION_PRESETS).toBeDefined();
     expect(VALIDATION_PRESETS.test).toBeDefined();
