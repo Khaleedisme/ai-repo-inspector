@@ -50,4 +50,37 @@ describe("jsonReport", () => {
       ],
     });
   });
+
+  it("handles renamed files and failed timed-out truncated validations in JSON report", () => {
+    const jsonStr = jsonReport({
+      repositoryPath: "/work/sample",
+      baseRef: "origin/HEAD",
+      changedFiles: [{ path: "src/new.ts", status: "renamed", oldPath: "src/old.ts" }],
+      validationResults: [
+        {
+          command: "npm run build",
+          status: "failed",
+          exitCode: null,
+          timedOut: true,
+          truncated: true,
+          output: "build timed out and truncated",
+        },
+      ],
+    });
+
+    const parsed = JSON.parse(jsonStr);
+    expect(parsed.files).toEqual([
+      { path: "src/new.ts", status: "renamed", oldPath: "src/old.ts" },
+    ]);
+    expect(parsed.validations).toEqual([
+      {
+        command: "npm run build",
+        status: "failed",
+        exitCode: null,
+        timedOut: true,
+        truncated: true,
+        output: "build timed out and truncated",
+      },
+    ]);
+  });
 });
