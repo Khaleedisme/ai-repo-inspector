@@ -13,6 +13,7 @@ export type ValidationResult = {
   stderr?: string;
   timedOut?: boolean;
   truncated?: boolean;
+  outputTruncated?: boolean;
 };
 
 export type ReviewRequest = {

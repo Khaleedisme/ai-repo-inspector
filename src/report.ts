@@ -13,6 +13,52 @@ export type JsonReportInput = {
   validationResults: ValidationResult[];
 };
 
+export const MAX_OUTPUT_SIZE = 16 * 1024; // 16 KB
+
+export function truncateOutput(
+  output: string,
+  limit: number = MAX_OUTPUT_SIZE,
+): { text: string; truncated: boolean } {
+  const buf = Buffer.from(output, "utf8");
+  if (buf.length <= limit) {
+    return { text: output, truncated: false };
+  }
+
+  const half = Math.floor(limit / 2);
+  let headBuf = buf.subarray(0, half);
+  let tailBuf = buf.subarray(buf.length - half);
+
+  let headEnd = headBuf.length;
+  while (headEnd > 0 && (headBuf[headEnd - 1] & 0xc0) === 0x80) {
+    headEnd--;
+  }
+  if (headEnd > 0) {
+    const lead = headBuf[headEnd - 1];
+    let expectedLen = 1;
+    if ((lead & 0xe0) === 0xc0) expectedLen = 2;
+    else if ((lead & 0xf0) === 0xe0) expectedLen = 3;
+    else if ((lead & 0xf8) === 0xf0) expectedLen = 4;
+    const actualLen = headBuf.length - (headEnd - 1);
+    if (actualLen < expectedLen) {
+      headEnd = headEnd - 1;
+    }
+  }
+  headBuf = headBuf.subarray(0, headEnd);
+
+  let tailStart = 0;
+  while (tailStart < tailBuf.length && (tailBuf[tailStart] & 0xc0) === 0x80) {
+    tailStart++;
+  }
+  tailBuf = tailBuf.subarray(tailStart);
+
+  const omittedBytes = buf.length - headBuf.length - tailBuf.length;
+  const headStr = headBuf.toString("utf8");
+  const tailStr = tailBuf.toString("utf8");
+  const text = `${headStr}\n[... ${omittedBytes} bytes omitted ...]\n${tailStr}`;
+
+  return { text, truncated: true };
+}
+
 function chooseFence(output: string): string {
   const matches = output.match(/`+/g);
   let maxBackticks = 0;
@@ -45,18 +91,20 @@ export function markdownReport(input: ReportInput): string {
     lines.push("No validations run");
   } else {
     for (const result of input.validationResults) {
+      const { text: processedOutput, truncated: outputTruncated } = truncateOutput(result.output);
+      const isTruncated = Boolean(result.truncated || outputTruncated);
       const status = result.status === "passed" ? "PASSED" : "FAILED";
       const exitCode =
         result.exitCode !== undefined ? result.exitCode : (result.status === "passed" ? 0 : null);
       const flags: string[] = [];
       if (result.timedOut) flags.push("timedOut");
-      if (result.truncated) flags.push("truncated");
+      if (isTruncated) flags.push("truncated");
       const flagStr = flags.length > 0 ? `, ${flags.join(", ")}` : "";
-      const fence = chooseFence(result.output);
+      const fence = chooseFence(processedOutput);
       lines.push(
         `### ${result.command} - ${status} (exitCode: ${exitCode}${flagStr})`,
         fence,
-        result.output,
+        processedOutput,
         fence,
       );
     }
@@ -70,14 +118,22 @@ export function jsonReport(input: JsonReportInput): string {
     repo: input.repositoryPath,
     base: input.baseRef,
     files: input.changedFiles,
-    validations: input.validationResults.map((v) => ({
-      command: v.command,
-      status: v.status,
-      exitCode: v.exitCode !== undefined ? v.exitCode : (v.status === "passed" ? 0 : null),
-      timedOut: Boolean(v.timedOut),
-      truncated: Boolean(v.truncated),
-      output: v.output,
-    })),
+    validations: input.validationResults.map((v) => {
+      const { text: processedOutput, truncated: outputTruncated } = truncateOutput(v.output);
+      const isTruncated = Boolean(v.truncated || outputTruncated);
+      const entry: Record<string, unknown> = {
+        command: v.command,
+        status: v.status,
+        exitCode: v.exitCode !== undefined ? v.exitCode : (v.status === "passed" ? 0 : null),
+        timedOut: Boolean(v.timedOut),
+        truncated: isTruncated,
+        output: processedOutput,
+      };
+      if (outputTruncated || v.outputTruncated) {
+        entry.outputTruncated = true;
+      }
+      return entry;
+    }),
   };
   return JSON.stringify(data, null, 2);
 }
