@@ -120,5 +120,24 @@ describe("CLI argument parsing and error reporting", () => {
       } catch {}
     }
   });
+
+  it("does not run main() or pollute stderr when imported as a module", () => {
+    const res = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        TSX_LOADER_URL,
+        "-e",
+        'import("./src/cli.js").then(() => { process.exit(process.exitCode ?? 0); });',
+      ],
+      {
+        encoding: "utf8",
+        cwd: process.cwd(),
+        env: { ...process.env },
+      },
+    );
+    expect(res.status).toBe(0);
+    expect(res.stderr).toBe("");
+  });
 });
 
