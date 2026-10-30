@@ -40,15 +40,29 @@ function isValidCommit(
       },
     );
     return true;
-  } catch {
+  } catch (error: unknown) {
+    if (error && typeof error === "object") {
+      const err = error as { code?: unknown; killed?: boolean };
+      if (
+        err.code === "ENOBUFS" ||
+        err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
+        err.code === "ETIMEDOUT" ||
+        err.killed
+      ) {
+        throw error;
+      }
+    }
     return false;
   }
 }
 
-export function detectDefaultBaseRef(repositoryPath: string): string {
+export function detectDefaultBaseRef(
+  repositoryPath: string,
+  options?: GitOptions,
+): string {
   const candidates = ["origin/HEAD", "main", "master"];
   for (const candidate of candidates) {
-    if (isValidCommit(repositoryPath, candidate)) {
+    if (isValidCommit(repositoryPath, candidate, options)) {
       return candidate;
     }
   }
@@ -130,7 +144,7 @@ export function changedFiles(
     }
     base = trimmed;
   } else {
-    base = detectDefaultBaseRef(repositoryPath);
+    base = detectDefaultBaseRef(repositoryPath, options);
   }
 
   const output = git(
