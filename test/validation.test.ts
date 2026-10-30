@@ -78,5 +78,15 @@ describe("validation runner", () => {
     expect(result.stderr).toMatch(/non_existent_binary_xyz|ENOENT/i);
     expect(result.output).toMatch(/non_existent_binary_xyz|ENOENT/i);
   });
+
+  it("does not match prototype properties as presets (constructor, toString, __proto__)", async () => {
+    for (const protoKey of ["constructor", "toString", "__proto__"]) {
+      // Must not crash with "preset.args is not iterable"
+      const result = await runValidation(protoKey, process.cwd());
+      expect(result.status).toBe("failed");
+      expect(result.output).not.toContain("preset.args is not iterable");
+    }
+  });
 });
+
 
