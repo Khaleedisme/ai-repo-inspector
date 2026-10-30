@@ -93,4 +93,30 @@ describe("CLI argument parsing and error reporting", () => {
     expect(lines).toHaveLength(1);
     expect(res.stderr).not.toContain("    at ");
   });
+
+  it("writes review-report.json when --format json is specified", () => {
+    const { mkdtempSync, rmSync, writeFileSync, existsSync, unlinkSync } = require("node:fs");
+    const { tmpdir } = require("node:os");
+    const { join } = require("node:path");
+    const repoDir = mkdtempSync(join(tmpdir(), "cli-json-test-"));
+    try {
+      execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+      writeFileSync(join(repoDir, "file.txt"), "hello");
+      execFileSync("git", ["add", "."], { cwd: repoDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir });
+
+      const res = runCli(["review", "--repo", repoDir, "--base-ref", "main", "--format", "json"]);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Review report written to review-report.json");
+      expect(existsSync("review-report.json")).toBe(true);
+    } finally {
+      try {
+        if (existsSync("review-report.json")) unlinkSync("review-report.json");
+        rmSync(repoDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
 });
+
