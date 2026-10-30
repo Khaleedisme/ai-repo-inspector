@@ -130,6 +130,7 @@ export async function handleReviewRepository(input: unknown) {
       repositoryPath: pathValidation.path,
       baseRef,
       validationCommands,
+      validationPolicy: "presets-only",
     });
 
     return { content: [{ type: "text" as const, text: report }] };

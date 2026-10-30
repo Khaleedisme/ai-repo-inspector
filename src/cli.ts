@@ -61,6 +61,7 @@ async function main() {
       baseRef: values["base-ref"],
       validationCommands: values.validate ?? [],
       format,
+      validationPolicy: "trusted-cli",
     });
 
     const outputFile = format === "json" ? "review-report.json" : "review-report.md";
