@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
 describe("build and test hygiene", () => {
@@ -31,12 +32,26 @@ describe("build and test hygiene", () => {
   it("builds dist/cli.js and allows node dist/cli.js review --help to run successfully", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "build-test-"));
     try {
-      const tscBin = resolve("node_modules/typescript/bin/tsc");
+      writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+
+      let tscBin = resolve("node_modules/typescript/bin/tsc");
+      try {
+        const require = createRequire(import.meta.url);
+        const resolvedTs = require.resolve("typescript");
+        const candidate = resolve(dirname(resolvedTs), "../bin/tsc");
+        if (existsSync(candidate)) {
+          tscBin = candidate;
+        }
+      } catch {}
+
       const tscArgs = ["-p", "tsconfig.build.json", "--outDir", tmpDir];
       const buildRes = existsSync(tscBin)
         ? spawnSync(process.execPath, [tscBin, ...tscArgs], { encoding: "utf8" })
-        : spawnSync("npx", ["tsc", ...tscArgs], { encoding: "utf8", shell: true });
-      expect(buildRes.status).toBe(0);
+        : spawnSync("npx", ["tsc", ...tscArgs], {
+            encoding: "utf8",
+            shell: process.platform === "win32",
+          });
+      expect(buildRes.status, `tsc compilation failed: ${buildRes.stderr || buildRes.stdout}`).toBe(0);
 
       const cliPath = resolve(tmpDir, "cli.js");
       expect(existsSync(cliPath)).toBe(true);
@@ -44,12 +59,12 @@ describe("build and test hygiene", () => {
       const res = spawnSync(process.execPath, [cliPath, "review", "--help"], {
         encoding: "utf8",
       });
-      expect(res.status).toBe(0);
+      expect(res.status, `cli execution failed: ${res.stderr || res.stdout}`).toBe(0);
       expect(res.stdout).toMatch(/Usage: inspector review/i);
       expect(res.stdout).toMatch(/Exit codes:/i);
     } finally {
       try {
-        rmSync(tmpDir, { recursive: true, force: true });
+        rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3 });
       } catch {}
     }
   });
