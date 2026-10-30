@@ -1,20 +1,44 @@
 import { execFileSync } from "node:child_process";
 import type { ChangedFile } from "./types.js";
 
-function git(repositoryPath: string, args: string[]): string {
-  return execFileSync("git", args, {
+export const DEFAULT_GIT_TIMEOUT = 30_000;
+export const DEFAULT_GIT_MAX_BUFFER = 10 * 1024 * 1024;
+
+export type GitOptions = {
+  timeout?: number;
+  maxBuffer?: number;
+};
+
+export function git(
+  repositoryPath: string,
+  args: string[],
+  options?: GitOptions,
+): string {
+  return execFileSync("git", ["-c", "core.quotepath=false", ...args], {
     cwd: repositoryPath,
     encoding: "utf8",
-  }).trim();
+    timeout: options?.timeout ?? DEFAULT_GIT_TIMEOUT,
+    maxBuffer: options?.maxBuffer ?? DEFAULT_GIT_MAX_BUFFER,
+  });
 }
 
-function isValidCommit(repositoryPath: string, ref: string): boolean {
+function isValidCommit(
+  repositoryPath: string,
+  ref: string,
+  options?: GitOptions,
+): boolean {
   try {
-    execFileSync("git", ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`], {
-      cwd: repositoryPath,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    execFileSync(
+      "git",
+      ["-c", "core.quotepath=false", "rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+      {
+        cwd: repositoryPath,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: options?.timeout ?? DEFAULT_GIT_TIMEOUT,
+        maxBuffer: options?.maxBuffer ?? DEFAULT_GIT_MAX_BUFFER,
+      },
+    );
     return true;
   } catch {
     return false;
@@ -31,7 +55,68 @@ export function detectDefaultBaseRef(repositoryPath: string): string {
   throw new Error("Could not detect default base revision (tried origin/HEAD, main, master).");
 }
 
-export function changedFiles(repositoryPath: string, baseRef?: string): ChangedFile[] {
+export function parseDiffOutput(output: string): ChangedFile[] {
+  const tokens = output.split("\0");
+  const files: ChangedFile[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const statusToken = tokens[i];
+    if (!statusToken) {
+      i++;
+      continue;
+    }
+
+    const statusCode = statusToken[0];
+
+    if (statusCode === "R" || statusCode === "C") {
+      const oldPath = tokens[i + 1];
+      const newPath = tokens[i + 2];
+      if (oldPath !== undefined && newPath !== undefined) {
+        if (statusCode === "R") {
+          files.push({
+            path: newPath,
+            status: "renamed",
+            oldPath,
+          });
+        } else {
+          files.push({
+            path: newPath,
+            status: "added",
+            oldPath,
+          });
+        }
+        i += 3;
+        continue;
+      }
+    }
+
+    const path = tokens[i + 1];
+    if (path !== undefined) {
+      let status: ChangedFile["status"] = "modified";
+      if (statusCode === "A") {
+        status = "added";
+      } else if (statusCode === "D") {
+        status = "deleted";
+      } else if (statusCode === "?") {
+        status = "untracked";
+      }
+      files.push({ path, status });
+      i += 2;
+      continue;
+    }
+
+    i++;
+  }
+
+  return files;
+}
+
+export function changedFiles(
+  repositoryPath: string,
+  baseRef?: string,
+  options?: GitOptions,
+): ChangedFile[] {
   let base: string;
 
   const trimmed = baseRef?.trim();
@@ -40,7 +125,7 @@ export function changedFiles(repositoryPath: string, baseRef?: string): ChangedF
     if (trimmed.startsWith("-")) {
       throw new Error(`Invalid baseRef: "${trimmed}". References cannot start with "-".`);
     }
-    if (!isValidCommit(repositoryPath, trimmed)) {
+    if (!isValidCommit(repositoryPath, trimmed, options)) {
       throw new Error(`Invalid baseRef: "${trimmed}". Revision does not exist or is not a commit.`);
     }
     base = trimmed;
@@ -48,23 +133,18 @@ export function changedFiles(repositoryPath: string, baseRef?: string): ChangedF
     base = detectDefaultBaseRef(repositoryPath);
   }
 
-  const output = git(repositoryPath, [
-    "diff",
-    "--name-status",
-    "--end-of-options",
-    `${base}...HEAD`,
-  ]);
+  const output = git(
+    repositoryPath,
+    [
+      "diff",
+      "--name-status",
+      "-z",
+      "--find-renames",
+      "--end-of-options",
+      `${base}...HEAD`,
+    ],
+    options,
+  );
 
-  return output
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [code, ...pathParts] = line.split("\t");
-      const status = code === "A" ? "added" : code === "D" ? "deleted" : "modified";
-      const path =
-        code.startsWith("R") && pathParts.length > 1
-          ? pathParts[1]
-          : pathParts.join("\t");
-      return { path, status };
-    });
+  return parseDiffOutput(output);
 }
