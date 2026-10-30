@@ -79,6 +79,31 @@ describe("MCP Server review_repository", () => {
     expect(result.content[0].text).toMatch(/git/i);
   });
 
+  it("returns MCP error when path contains a dummy .git directory that is not a real git repository", async () => {
+    process.env.REPO_INSPECTOR_ROOTS = tempDir;
+    const fakeGitDir = join(tempDir, "fake-git");
+    mkdirSync(fakeGitDir);
+    mkdirSync(join(fakeGitDir, ".git"));
+
+    const result = await handleReviewRepository({
+      repo_path: fakeGitDir,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/git/i);
+  });
+
+  it("returns MCP error when handleReviewRepository is passed invalid input schema", async () => {
+    process.env.REPO_INSPECTOR_ROOTS = tempDir;
+    // Pass invalid validationCommand preset
+    const result = await handleReviewRepository({
+      repo_path: tempDir,
+      validationCommands: ["malicious; command"] as any,
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
   it("handles valid git repo using repo_path without undefined in title", async () => {
     const repo = join(tempDir, "valid-repo");
     mkdirSync(repo);
@@ -105,3 +130,4 @@ describe("MCP Server review_repository", () => {
     expect(result.content[0].text).toContain(repo);
   });
 });
+

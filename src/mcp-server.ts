@@ -20,16 +20,21 @@ export const reviewRepositorySchema = z.object({
 export type ReviewRepositoryInput = z.infer<typeof reviewRepositorySchema>;
 
 function isGitRepo(dir: string): boolean {
-  if (existsSync(join(dir, ".git"))) {
-    return true;
-  }
   try {
     const gitDir = execFileSync("git", ["rev-parse", "--git-dir"], {
       cwd: dir,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    return gitDir === ".git" || resolve(dir, gitDir) === resolve(dir, ".git");
+    if (gitDir === ".git") {
+      return true;
+    }
+    const topLevel = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return resolve(topLevel).toLowerCase() === resolve(dir).toLowerCase();
   } catch {
     return false;
   }
@@ -77,16 +82,16 @@ function isInsideAllowedRoots(targetPath: string, allowedRoots: string[]): boole
 export function validateRepositoryPath(repoPath: string): { valid: true; path: string } | { valid: false; error: string } {
   const resolved = resolve(repoPath);
 
-  if (!existsSync(resolved)) {
-    return { valid: false, error: `Repository path does not exist: ${resolved}` };
-  }
-
   const allowedRoots = getAllowedRoots();
   if (!isInsideAllowedRoots(resolved, allowedRoots)) {
     return {
       valid: false,
       error: `Repository path is not within allowed roots (${allowedRoots.join(", ")}): ${resolved}`,
     };
+  }
+
+  if (!existsSync(resolved)) {
+    return { valid: false, error: `Repository path does not exist: ${resolved}` };
   }
 
   if (!isGitRepo(resolved)) {
@@ -96,9 +101,24 @@ export function validateRepositoryPath(repoPath: string): { valid: true; path: s
   return { valid: true, path: resolved };
 }
 
-export async function handleReviewRepository(input: ReviewRepositoryInput) {
+export async function handleReviewRepository(input: unknown) {
   try {
-    const pathValidation = validateRepositoryPath(input.repo_path);
+    const parsed = reviewRepositorySchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Invalid input: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const { repo_path, baseRef, validationCommands } = parsed.data;
+
+    const pathValidation = validateRepositoryPath(repo_path);
     if (!pathValidation.valid) {
       return {
         content: [{ type: "text" as const, text: pathValidation.error }],
@@ -108,14 +128,15 @@ export async function handleReviewRepository(input: ReviewRepositoryInput) {
 
     const report = await reviewRepository({
       repositoryPath: pathValidation.path,
-      baseRef: input.baseRef,
-      validationCommands: input.validationCommands,
+      baseRef,
+      validationCommands,
     });
 
     return { content: [{ type: "text" as const, text: report }] };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
-      content: [{ type: "text" as const, text: error?.message || String(error) }],
+      content: [{ type: "text" as const, text: message }],
       isError: true,
     };
   }
