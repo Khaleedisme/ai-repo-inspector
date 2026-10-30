@@ -16,7 +16,7 @@ export type ValidationOptions = {
 };
 
 export const DEFAULT_TIMEOUT = 30_000;
-export const DEFAULT_MAX_BUFFER = 1024 * 1024;
+export const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
 
 export const VALIDATION_PRESETS: Record<string, { file: string; args: string[] }> = {
   test: {
