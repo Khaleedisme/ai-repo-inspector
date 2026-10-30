@@ -13,6 +13,56 @@ describe("markdownReport", () => {
     expect(report).toContain("npm test");
     expect(report).toContain("ok");
   });
+
+  it("shows empty sections as 'No changes' and 'No validations run' and ends with newline", () => {
+    const report = markdownReport({
+      repositoryPath: "/work/sample",
+      changedFiles: [],
+      validationResults: [],
+    });
+
+    expect(report).toContain("No changes");
+    expect(report).toContain("No validations run");
+    expect(report.endsWith("\n")).toBe(true);
+  });
+
+  it("shows 'old -> new (renamed)' for renames", () => {
+    const report = markdownReport({
+      repositoryPath: "/work/sample",
+      changedFiles: [
+        { path: "src/new.ts", status: "renamed", oldPath: "src/old.ts" },
+      ],
+      validationResults: [],
+    });
+
+    expect(report).toContain("src/old.ts -> src/new.ts (renamed)");
+  });
+
+  it("shows status, exitCode, and flags timedOut/truncated in validation heading line", () => {
+    const report = markdownReport({
+      repositoryPath: "/work/sample",
+      changedFiles: [],
+      validationResults: [
+        {
+          command: "npm test",
+          status: "passed",
+          exitCode: 0,
+          output: "all tests passed",
+        },
+        {
+          command: "npm run build",
+          status: "failed",
+          exitCode: 1,
+          timedOut: true,
+          truncated: true,
+          output: "build failed",
+        },
+      ],
+    });
+
+    expect(report).toMatch(/^### npm test - PASSED \(exitCode: 0\)$/m);
+    expect(report).toMatch(/^### npm run build - FAILED \(exitCode: 1, timedOut, truncated\)$/m);
+  });
 });
 
 describe("jsonReport", () => {
