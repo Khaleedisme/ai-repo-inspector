@@ -3,7 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { changedFiles } from "../src/git.js";
+import {
+  changedFiles,
+  detectDefaultBaseRef,
+  git,
+  DEFAULT_GIT_TIMEOUT,
+  DEFAULT_GIT_MAX_BUFFER,
+} from "../src/git.js";
 
 describe("git changedFiles", () => {
   let tempDir: string;
@@ -172,6 +178,18 @@ describe("git changedFiles", () => {
     setupRepo("main");
     const changes = changedFiles(tempDir, "main", { timeout: 5000, maxBuffer: 1024 * 1024 });
     expect(changes).toEqual([]);
+  });
+
+  it("enforces git maxBuffer and exports DEFAULT_GIT_TIMEOUT and DEFAULT_GIT_MAX_BUFFER", () => {
+    expect(DEFAULT_GIT_TIMEOUT).toBe(30_000);
+    expect(DEFAULT_GIT_MAX_BUFFER).toBe(10 * 1024 * 1024);
+    setupRepo("main");
+    expect(() => git(tempDir, ["log"], { maxBuffer: 1 })).toThrow(/maxBuffer|buffer|ENOBUFS/i);
+  });
+
+  it("forwards git options in detectDefaultBaseRef", () => {
+    setupRepo("main");
+    expect(() => detectDefaultBaseRef(tempDir, { maxBuffer: 1 })).toThrow();
   });
 });
 
