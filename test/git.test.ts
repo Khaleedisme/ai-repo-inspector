@@ -35,6 +35,25 @@ describe("git changedFiles", () => {
     );
   });
 
+  it("rejects baseRef with whitespace prefix starting with dash '-'", () => {
+    setupRepo("main");
+    expect(() => changedFiles(tempDir, "  --output=pwned.txt")).toThrow(
+      /cannot start with ["'-]/i,
+    );
+  });
+
+  it("correctly handles renamed files with target path and modified status", () => {
+    setupRepo("main");
+    execFileSync("git", ["checkout", "-b", "rename-branch"], { cwd: tempDir });
+    execFileSync("git", ["mv", "file.txt", "renamed-file.txt"], { cwd: tempDir });
+    execFileSync("git", ["commit", "-m", "rename file"], { cwd: tempDir });
+
+    const changes = changedFiles(tempDir, "main");
+    expect(changes).toEqual([
+      { path: "renamed-file.txt", status: "modified" },
+    ]);
+  });
+
   it("verifies baseRef with git rev-parse and rejects invalid ref", () => {
     setupRepo("main");
     expect(() => changedFiles(tempDir, "non-existent-branch")).toThrow(

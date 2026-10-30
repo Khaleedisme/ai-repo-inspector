@@ -34,14 +34,16 @@ export function detectDefaultBaseRef(repositoryPath: string): string {
 export function changedFiles(repositoryPath: string, baseRef?: string): ChangedFile[] {
   let base: string;
 
-  if (baseRef !== undefined && baseRef !== "") {
-    if (baseRef.startsWith("-")) {
-      throw new Error(`Invalid baseRef: "${baseRef}". References cannot start with "-".`);
+  const trimmed = baseRef?.trim();
+
+  if (trimmed !== undefined && trimmed !== "") {
+    if (trimmed.startsWith("-")) {
+      throw new Error(`Invalid baseRef: "${trimmed}". References cannot start with "-".`);
     }
-    if (!isValidCommit(repositoryPath, baseRef)) {
-      throw new Error(`Invalid baseRef: "${baseRef}". Revision does not exist or is not a commit.`);
+    if (!isValidCommit(repositoryPath, trimmed)) {
+      throw new Error(`Invalid baseRef: "${trimmed}". Revision does not exist or is not a commit.`);
     }
-    base = baseRef;
+    base = trimmed;
   } else {
     base = detectDefaultBaseRef(repositoryPath);
   }
@@ -59,6 +61,10 @@ export function changedFiles(repositoryPath: string, baseRef?: string): ChangedF
     .map((line) => {
       const [code, ...pathParts] = line.split("\t");
       const status = code === "A" ? "added" : code === "D" ? "deleted" : "modified";
-      return { path: pathParts.join("\t"), status };
+      const path =
+        code.startsWith("R") && pathParts.length > 1
+          ? pathParts[1]
+          : pathParts.join("\t");
+      return { path, status };
     });
 }
