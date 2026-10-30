@@ -41,6 +41,8 @@ export function truncateOutput(
     const actualLen = headBuf.length - (headEnd - 1);
     if (actualLen < expectedLen) {
       headEnd = headEnd - 1;
+    } else {
+      headEnd = headBuf.length;
     }
   }
   headBuf = headBuf.subarray(0, headEnd);
