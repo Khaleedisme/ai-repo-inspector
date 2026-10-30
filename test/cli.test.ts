@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { parseCliArgs } from "../src/cli.js";
 
 const CLI_PATH = resolve("src/cli.ts");
 
@@ -34,12 +35,31 @@ describe("CLI argument parsing and error reporting", () => {
   });
 
   it("does not truncate --repo argument containing spaces", () => {
-    const spacedPath = "test repo with spaces";
-    // Passing a non-existent spaced repo path should fail with error message containing full path, not truncated
-    const res = runCli(["review", "--repo", spacedPath]);
-    expect(res.status).toBe(1);
-    expect(res.stderr).toContain("test repo with spaces");
-    expect(res.stderr).not.toBe("Fatal error: [Error: Command failed: git rev-parse --git-dir]");
+    const parsed = parseCliArgs(["review", "--repo", "my repo with spaces/sub"]);
+    expect(parsed.values.repo).toBe("my repo with spaces/sub");
+  });
+
+  it("successfully reviews repository when path contains spaces", () => {
+    const { mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+    const { tmpdir } = require("node:os");
+    const { join } = require("node:path");
+    const spaceDir = mkdtempSync(join(tmpdir(), "space repo-"));
+    try {
+      execFileSync("git", ["init", "-b", "main"], { cwd: spaceDir });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: spaceDir });
+      execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: spaceDir });
+      writeFileSync(join(spaceDir, "file.txt"), "hello");
+      execFileSync("git", ["add", "."], { cwd: spaceDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: spaceDir });
+
+      const res = runCli(["review", "--repo", spaceDir, "--base-ref", "main"]);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Review report written to");
+    } finally {
+      try {
+        rmSync(spaceDir, { recursive: true, force: true });
+      } catch {}
+    }
   });
 
   it("errors cleanly on unknown flags with exit code 1 and no stack trace", () => {

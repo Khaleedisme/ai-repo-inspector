@@ -1,51 +1,80 @@
 #!/usr/bin/env node
 import { writeFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 import { reviewRepository } from "./core.js";
 
-type Args = {
-  command: string;
-  repositoryPath?: string;
-  baseRef?: string;
-  format?: "markdown" | "json";
-  validations: string[];
-};
+const HELP_TEXT = `Usage: inspector review --repo <path> [--base-ref <ref>] [--format <markdown|json>] [--validate <command>...]
 
-function parseArgs(argv: string[]): Args {
-  const args: Args = { command: argv[0] ?? "", validations: [] };
-  for (let index = 1; index < argv.length; index++) {
-    const token = argv[index];
-    if (token === "--repo") {
-      args.repositoryPath = argv[++index]?.split(" ")[0];
-    } else if (token === "--base-ref") {
-      args.baseRef = argv[++index];
-    } else if (token === "--format") {
-      args.format = argv[++index] as Args["format"];
-    } else if (token === "--validate") {
-      args.validations.push(argv[++index]);
-    }
-  }
-  return args;
+Options:
+  --repo <path>           Path to the repository to inspect (required)
+  --base-ref <ref>        Git base reference to compare against
+  --format <format>       Report format: markdown (default) or json
+  --validate <command>    Validation command or preset to run (can be repeated)
+  -h, --help              Show this help message
+`;
+
+export function parseCliArgs(argv: string[]) {
+  return parseArgs({
+    args: argv,
+    options: {
+      repo: { type: "string" },
+      "base-ref": { type: "string" },
+      format: { type: "string" },
+      validate: { type: "string", multiple: true },
+      help: { type: "boolean", short: "h" },
+    },
+    allowPositionals: true,
+    strict: true,
+  });
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.command !== "review" || !args.repositoryPath) {
-    console.error("Usage: inspector review --repo <path> [--base-ref <ref>] [--validate <command>]");
-    process.exitCode = 1;
-    return;
-  }
+  try {
+    const { values, positionals } = parseCliArgs(process.argv.slice(2));
 
-  const report = await reviewRepository({
-    repositoryPath: args.repositoryPath,
-    baseRef: args.baseRef,
-    validationCommands: args.validations,
-    format: args.format,
-  });
-  writeFileSync("review-report.md", report, "utf8");
-  console.log("Review report written to review-report.md");
+    if (values.help) {
+      process.stdout.write(HELP_TEXT);
+      return;
+    }
+
+    if (positionals[0] !== "review") {
+      console.error("Usage: inspector review --repo <path> [--base-ref <ref>] [--format <markdown|json>] [--validate <command>]");
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!values.repo) {
+      console.error("Error: Missing required option '--repo'");
+      process.exitCode = 1;
+      return;
+    }
+
+    if (values.format !== undefined && values.format !== "markdown" && values.format !== "json") {
+      console.error(`Invalid format: "${values.format}". Must be "markdown" or "json".`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const format = values.format as "markdown" | "json" | undefined;
+    const report = await reviewRepository({
+      repositoryPath: values.repo,
+      baseRef: values["base-ref"],
+      validationCommands: values.validate ?? [],
+      format,
+    });
+
+    const outputFile = format === "json" ? "review-report.json" : "review-report.md";
+    writeFileSync(outputFile, report, "utf8");
+    console.log(`Review report written to ${outputFile}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message.split("\n")[0]);
+    process.exitCode = 1;
+  }
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message.split("\n")[0]);
   process.exitCode = 1;
 });
