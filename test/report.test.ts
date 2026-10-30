@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markdownReport, jsonReport } from "../src/report.js";
+import { markdownReport, jsonReport, MAX_OUTPUT_SIZE } from "../src/report.js";
 
 describe("markdownReport", () => {
   it("lists changed files and validation output", () => {
@@ -150,5 +150,66 @@ describe("jsonReport", () => {
         output: "build timed out and truncated",
       },
     ]);
+  });
+});
+
+describe("output size cap", () => {
+  it("exports MAX_OUTPUT_SIZE constant equal to 16 KB", () => {
+    expect(MAX_OUTPUT_SIZE).toBe(16 * 1024);
+  });
+
+  it("truncates validation output to 16 KB in markdownReport and adds truncated flag", () => {
+    const headPart = "START_HEAD_DATA_".padEnd(8192, "A");
+    const middlePart = "MIDDLE_".padEnd(4096, "M");
+    const tailPart = "END_TAIL_DATA_".padStart(8192, "Z");
+    const fullOutput = headPart + middlePart + tailPart; // 8192 + 4096 + 8192 = 20480 bytes
+
+    const report = markdownReport({
+      repositoryPath: "/work/sample",
+      changedFiles: [],
+      validationResults: [
+        {
+          command: "npm test",
+          status: "passed",
+          exitCode: 0,
+          output: fullOutput,
+        },
+      ],
+    });
+
+    expect(report).toContain("[... 4096 bytes omitted ...]");
+    expect(report).toContain("START_HEAD_DATA_");
+    expect(report).toContain("END_TAIL_DATA_");
+    expect(report).not.toContain("MIDDLE_");
+    expect(report).toContain("### npm test - PASSED (exitCode: 0, truncated)");
+  });
+
+  it("truncates validation output to 16 KB in jsonReport and adds outputTruncated: true", () => {
+    const headPart = "START_HEAD_DATA_".padEnd(8192, "A");
+    const middlePart = "MIDDLE_".padEnd(4096, "M");
+    const tailPart = "END_TAIL_DATA_".padStart(8192, "Z");
+    const fullOutput = headPart + middlePart + tailPart; // 20480 bytes
+
+    const jsonStr = jsonReport({
+      repositoryPath: "/work/sample",
+      baseRef: "main",
+      changedFiles: [],
+      validationResults: [
+        {
+          command: "npm test",
+          status: "passed",
+          exitCode: 0,
+          output: fullOutput,
+        },
+      ],
+    });
+
+    const parsed = JSON.parse(jsonStr);
+    expect(parsed.validations[0].outputTruncated).toBe(true);
+    expect(parsed.validations[0].truncated).toBe(true);
+    expect(parsed.validations[0].output).toContain("[... 4096 bytes omitted ...]");
+    expect(parsed.validations[0].output).toContain("START_HEAD_DATA_");
+    expect(parsed.validations[0].output).toContain("END_TAIL_DATA_");
+    expect(parsed.validations[0].output).not.toContain("MIDDLE_");
   });
 });
