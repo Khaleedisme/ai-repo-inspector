@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { reviewRepository } from "./core.js";
 
@@ -74,8 +76,28 @@ async function main() {
   }
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message.split("\n")[0]);
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const current = fileURLToPath(import.meta.url).toLowerCase();
+    const invoked = resolve(process.argv[1]).toLowerCase();
+    if (current === invoked) return true;
+  } catch {}
+
+  const normalized = process.argv[1].replace(/\\/g, "/").toLowerCase();
+  return (
+    normalized.endsWith("/cli.ts") ||
+    normalized.endsWith("/cli.js") ||
+    normalized.endsWith("/bin/inspector") ||
+    normalized.endsWith("/inspector") ||
+    normalized === "inspector"
+  );
+}
+
+if (isDirectExecution()) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message.split("\n")[0]);
+    process.exitCode = 1;
+  });
+}
