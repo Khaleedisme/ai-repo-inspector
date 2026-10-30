@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseCliArgs } from "../src/cli.js";
 
 const CLI_PATH = resolve("src/cli.ts");
+const TSX_LOADER_URL = pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href;
 
-function runCli(args: string[]) {
+function runCli(args: string[], cwd?: string) {
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", CLI_PATH, ...args],
+    ["--import", TSX_LOADER_URL, CLI_PATH, ...args],
     {
       encoding: "utf8",
+      cwd: cwd ?? process.cwd(),
       env: { ...process.env },
     },
   );
@@ -107,13 +110,12 @@ describe("CLI argument parsing and error reporting", () => {
       execFileSync("git", ["add", "."], { cwd: repoDir });
       execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir });
 
-      const res = runCli(["review", "--repo", repoDir, "--base-ref", "main", "--format", "json"]);
+      const res = runCli(["review", "--repo", repoDir, "--base-ref", "main", "--format", "json"], repoDir);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("Review report written to review-report.json");
-      expect(existsSync("review-report.json")).toBe(true);
+      expect(existsSync(join(repoDir, "review-report.json"))).toBe(true);
     } finally {
       try {
-        if (existsSync("review-report.json")) unlinkSync("review-report.json");
         rmSync(repoDir, { recursive: true, force: true });
       } catch {}
     }
