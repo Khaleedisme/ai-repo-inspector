@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
 describe("build and test hygiene", () => {
@@ -28,14 +29,28 @@ describe("build and test hygiene", () => {
   });
 
   it("builds dist/cli.js and allows node dist/cli.js review --help to run successfully", () => {
-    const distCliPath = resolve("dist/cli.js");
-    expect(existsSync(distCliPath)).toBe(true);
+    const tmpDir = mkdtempSync(join(tmpdir(), "build-test-"));
+    try {
+      const tscBin = resolve("node_modules/typescript/bin/tsc");
+      const tscArgs = ["-p", "tsconfig.build.json", "--outDir", tmpDir];
+      const buildRes = existsSync(tscBin)
+        ? spawnSync(process.execPath, [tscBin, ...tscArgs], { encoding: "utf8" })
+        : spawnSync("npx", ["tsc", ...tscArgs], { encoding: "utf8", shell: true });
+      expect(buildRes.status).toBe(0);
 
-    const res = spawnSync(process.execPath, [distCliPath, "review", "--help"], {
-      encoding: "utf8",
-    });
-    expect(res.status).toBe(0);
-    expect(res.stdout).toMatch(/Usage: inspector review/i);
-    expect(res.stdout).toMatch(/Exit codes:/i);
+      const cliPath = resolve(tmpDir, "cli.js");
+      expect(existsSync(cliPath)).toBe(true);
+
+      const res = spawnSync(process.execPath, [cliPath, "review", "--help"], {
+        encoding: "utf8",
+      });
+      expect(res.status).toBe(0);
+      expect(res.stdout).toMatch(/Usage: inspector review/i);
+      expect(res.stdout).toMatch(/Exit codes:/i);
+    } finally {
+      try {
+        rmSync(tmpDir, { recursive: true, force: true });
+      } catch {}
+    }
   });
 });
