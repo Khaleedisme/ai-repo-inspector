@@ -31,6 +31,10 @@ describe("CLI argument parsing and error reporting", () => {
     expect(resHelp.stdout).toMatch(/Usage: inspector/i);
     expect(resHelp.stdout).toContain("--repo");
     expect(resHelp.stdout).toContain("--help");
+    expect(resHelp.stdout).toMatch(/Exit codes:/i);
+    expect(resHelp.stdout).toMatch(/0\s+.*all passed/i);
+    expect(resHelp.stdout).toMatch(/1\s+.*tool.*error/i);
+    expect(resHelp.stdout).toMatch(/2\s+.*validation failed/i);
 
     const resH = runCli(["-h"]);
     expect(resH.status).toBe(0);
@@ -138,6 +142,74 @@ describe("CLI argument parsing and error reporting", () => {
     );
     expect(res.status).toBe(0);
     expect(res.stderr).toBe("");
+  });
+
+  it("exits with code 0 when review succeeds and all validations pass", () => {
+    const { mkdtempSync, rmSync, writeFileSync, existsSync } = require("node:fs");
+    const { tmpdir } = require("node:os");
+    const { join } = require("node:path");
+    const repoDir = mkdtempSync(join(tmpdir(), "cli-exit-0-test-"));
+    try {
+      execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+      writeFileSync(join(repoDir, "file.txt"), "hello");
+      execFileSync("git", ["add", "."], { cwd: repoDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir });
+
+      const res = runCli(
+        [
+          "review",
+          "--repo",
+          repoDir,
+          "--base-ref",
+          "main",
+          "--validate",
+          "node -e process.exit(0)",
+        ],
+        repoDir,
+      );
+      expect(res.status).toBe(0);
+      expect(existsSync(join(repoDir, "review-report.md"))).toBe(true);
+    } finally {
+      try {
+        rmSync(repoDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("exits with code 2 when review is produced but at least one validation failed", () => {
+    const { mkdtempSync, rmSync, writeFileSync, existsSync } = require("node:fs");
+    const { tmpdir } = require("node:os");
+    const { join } = require("node:path");
+    const repoDir = mkdtempSync(join(tmpdir(), "cli-exit-2-test-"));
+    try {
+      execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+      writeFileSync(join(repoDir, "file.txt"), "hello");
+      execFileSync("git", ["add", "."], { cwd: repoDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir });
+
+      const res = runCli(
+        [
+          "review",
+          "--repo",
+          repoDir,
+          "--base-ref",
+          "main",
+          "--validate",
+          "node -e process.exit(1)",
+        ],
+        repoDir,
+      );
+      expect(res.status).toBe(2);
+      expect(existsSync(join(repoDir, "review-report.md"))).toBe(true);
+    } finally {
+      try {
+        rmSync(repoDir, { recursive: true, force: true });
+      } catch {}
+    }
   });
 });
 
