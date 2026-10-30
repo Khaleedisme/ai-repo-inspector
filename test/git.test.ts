@@ -42,7 +42,7 @@ describe("git changedFiles", () => {
     );
   });
 
-  it("correctly handles renamed files with target path and modified status", () => {
+  it("correctly handles renamed files with target path and renamed status and oldPath", () => {
     setupRepo("main");
     execFileSync("git", ["checkout", "-b", "rename-branch"], { cwd: tempDir });
     execFileSync("git", ["mv", "file.txt", "renamed-file.txt"], { cwd: tempDir });
@@ -50,7 +50,7 @@ describe("git changedFiles", () => {
 
     const changes = changedFiles(tempDir, "main");
     expect(changes).toEqual([
-      { path: "renamed-file.txt", status: "modified" },
+      { path: "renamed-file.txt", status: "renamed", oldPath: "file.txt" },
     ]);
   });
 
@@ -130,4 +130,48 @@ describe("git changedFiles", () => {
       ]),
     );
   });
+
+  it("preserves unquoted unicode filenames in diff output", () => {
+    setupRepo("main");
+    execFileSync("git", ["checkout", "-b", "unicode-branch"], { cwd: tempDir });
+    writeFileSync(join(tempDir, "файл-üñîçødë.txt"), "unicode content\n");
+    execFileSync("git", ["add", "."], { cwd: tempDir });
+    execFileSync("git", ["commit", "-m", "add unicode file"], { cwd: tempDir });
+
+    const changes = changedFiles(tempDir, "main");
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        { path: "файл-üñîçødë.txt", status: "added" },
+      ]),
+    );
+    expect(changes.find((c) => c.path.includes("файл"))?.path).toBe("файл-üñîçødë.txt");
+  });
+
+  it("handles renamed unicode files without octal quoting", () => {
+    setupRepo("main");
+    execFileSync("git", ["checkout", "-b", "unicode-rename-branch"], { cwd: tempDir });
+    writeFileSync(join(tempDir, "исходный-файл.txt"), "content\n");
+    execFileSync("git", ["add", "."], { cwd: tempDir });
+    execFileSync("git", ["commit", "-m", "add unicode"], { cwd: tempDir });
+
+    execFileSync("git", ["checkout", "-b", "rename-unicode"], { cwd: tempDir });
+    execFileSync("git", ["mv", "исходный-файл.txt", "переименованный-файл.txt"], { cwd: tempDir });
+    execFileSync("git", ["commit", "-m", "rename unicode"], { cwd: tempDir });
+
+    const changes = changedFiles(tempDir, "unicode-rename-branch");
+    expect(changes).toEqual([
+      {
+        path: "переименованный-файл.txt",
+        status: "renamed",
+        oldPath: "исходный-файл.txt",
+      },
+    ]);
+  });
+
+  it("supports git options timeout and maxBuffer", () => {
+    setupRepo("main");
+    const changes = changedFiles(tempDir, "main", { timeout: 5000, maxBuffer: 1024 * 1024 });
+    expect(changes).toEqual([]);
+  });
 });
+
